@@ -1,6 +1,9 @@
 
 scalaVersion := "2.13.1"
 
+// https://mvnrepository.com/artifact/org.apache.commons/commons-compress
+libraryDependencies += "org.apache.commons" % "commons-compress" % "1.20"
+
 libraryDependencies += "co.fs2" %% "fs2-core" % "2.3.0"
 libraryDependencies += "co.fs2" %% "fs2-io" % "2.3.0"
 

@@ -103,6 +103,26 @@ object Main extends IOApp {
           }}
 
         }
+        case request@(Method.POST -> Root / "tar") => {
+          blocker.use {b => {
+            request.decode[Multipart[IO]] { m => {
+              PushCodebaseValidator.validateRequest(m) match {
+                case Valid(a) => {
+                  val tarCodebase: IO[Unit] = Stream.emit(("codebase.tar.gz", a.codebase))
+                    .through(archive.tar(512))
+                    .through(io.file.writeAll(Paths.get("test.tar"), b))
+                    .compile
+                    .drain
+
+                  Ok(for {
+                    _ <- tarCodebase
+                  } yield ())
+                }
+                case Invalid(errorList) => Ok(errorList.foldMap(_.toString))
+              }
+            }}
+          }}
+        }
       }
       .orNotFound
 
