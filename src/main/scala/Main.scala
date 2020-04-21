@@ -1,14 +1,14 @@
 package com.hhalex.jb
 
-import java.nio.file.Paths
+import java.nio.file.{Paths, StandardOpenOption}
 
 import cats.effect.{Blocker, ExitCode, IO, IOApp}
 import org.http4s._
 import org.http4s.dsl.io._
 import org.http4s.implicits._
-import org.http4s.multipart.{Multipart}
+import org.http4s.multipart.Multipart
 import org.http4s.server.blaze.BlazeServerBuilder
-import fs2.{io,_}
+import fs2.{io, _}
 
 import sys.process._
 import cats.data._
@@ -63,7 +63,7 @@ object PushCodebaseValidator {
 
   def validateRequest(m: Multipart[IO]): ValidatedNec[PushCodebaseRequestValidation, PushCodebaseRequest] =
     (
-      extractFile(m, "codebase.tar.gz").toValidatedNec,
+      extractFile(m, "codebase.tar").toValidatedNec,
       extractField[String](m, "app").toValidatedNec,
       extractField[String](m, "rev").toValidatedNec,
       extractField[Int](m, "conf").toValidatedNec,
@@ -103,20 +103,29 @@ object Main extends IOApp {
           }}
 
         }
-        case request@(Method.POST -> Root / "tar") => {
+        case request@(Method.POST -> Root / "untar") => {
           blocker.use {b => {
             request.decode[Multipart[IO]] { m => {
               PushCodebaseValidator.validateRequest(m) match {
                 case Valid(a) => {
-                  val tarCodebase: IO[Unit] = Stream.emit(("codebase.tar.gz", a.codebase))
-                    .through(archive.tar(512))
-                    .through(io.file.writeAll(Paths.get("test.tar"), b))
+                  val untarCodebase: IO[Unit] = a.codebase
+                    .through(archive.untar(512))
+                    .debug()
+                    .flatMap({
+                      case (filePath, s) => {
+                        val file = Paths.get(s"codebases/${a.app}/${a.revision}/${a.config}/${a.target}/$filePath")
+                        val parent = file.getParent
+
+                        for {
+                          _ <- Stream.eval(io.file.createDirectories[IO](b, parent))
+                          _ <- s.through(io.file.writeAll(file, b)).handleError(e => println(e.getStackTrace.mkString("\n")))
+                        } yield ()
+                      }
+                    })
                     .compile
                     .drain
 
-                  Ok(for {
-                    _ <- tarCodebase
-                  } yield ())
+                  Ok(untarCodebase)
                 }
                 case Invalid(errorList) => Ok(errorList.foldMap(_.toString))
               }

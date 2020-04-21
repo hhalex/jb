@@ -1,13 +1,12 @@
 package com.hhalex.jb
 
-import java.io.{ByteArrayOutputStream, File}
+import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
 import java.nio.file.Path
 
-import cats.Functor
 import fs2.{Chunk, Pipe, Stream}
-import org.apache.commons.compress.archivers.tar.TarArchiveEntry
-import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
+import org.apache.commons.compress.archivers.tar.{TarArchiveEntry, TarArchiveInputStream, TarArchiveOutputStream}
 import cats.effect.{Blocker, ContextShift, IO}
+import fs2.Chunk.Bytes
 import fs2.io.file
 
 object archive {
@@ -51,5 +50,32 @@ object archive {
         body ++ trailer
       }
 
-  def untar[F[_]](bufferSize: Int): Pipe[F, Byte, File] = ???
+  def untar(bufferSize: Int)(implicit ctx: ContextShift[IO]): Pipe[IO, Byte, (String, Stream[IO, Byte])] =
+    in => in.through(fs2.io.toInputStream).flatMap {
+      bos => {
+        val taros = new TarArchiveInputStream(bos, bufferSize)
+
+        def createStream(s: TarArchiveInputStream): Stream[IO, (TarArchiveEntry, TarArchiveInputStream)] = Stream.suspend {
+          Option(s.getNextTarEntry) match {
+            case None => Stream.empty
+            case Some(current) if current.isFile => Stream.emit((current, s)) ++ createStream(s)
+            case _ => createStream(s)
+          }
+        }
+
+        createStream(taros).flatMap({
+          case (entry, s) => {
+            val name = entry.getName
+            val buffer = new Array[Byte](bufferSize)
+            def file: Stream[IO, Byte] = Stream.suspend {
+              val nbReadBytes = s.read(buffer)
+              if (nbReadBytes != -1)
+                Stream.chunk(Bytes(buffer, 0, nbReadBytes)) ++ file
+              else Stream.empty
+            }
+            Stream.emit((name, file))
+          }
+        })
+      }
+    }
 }
