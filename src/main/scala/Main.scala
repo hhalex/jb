@@ -14,6 +14,7 @@ import sys.process._
 import cats.data._
 import cats.data.Validated._
 import cats.implicits._
+import codebase.{CodebaseConfig, CodebaseWorkspace}
 
 trait Read[A] {
   def read(s: String): Option[A]
@@ -80,37 +81,14 @@ object Main extends IOApp {
 
     val app = HttpRoutes
       .of[IO] {
-        case req@(Method.GET -> Root) => {
-          Ok(req.body+"2")
-        }
+
         case request@(Method.POST -> Root / "codebase") => {
-          blocker.use {b => {
-            request.decode[Multipart[IO]] { m => {
-              PushCodebaseValidator.validateRequest(m) match {
-                case Valid(a) => {
-                  val writeCodebase: IO[Unit] = a.codebase.through(io.file.writeAll(Paths.get("codebase.tar.gz"), b)).compile.drain
-
-                  Ok(for {
-                    _ <- writeCodebase
-                    _ <- fs2.io.file.createDirectories[IO](b, Paths.get(a.app, a.revision, a.config.toString, a.target.toString))
-                    _ <- IO.pure(s"tar -xvzf codebase.tar.gz --directory ${a.app}/${a.revision}/${a.config}/${a.target}".!)
-                    res <- IO.pure(s"ls -al ${a.app}/${a.revision}/${a.config}/${a.target}".!!)
-                  } yield res)
-                }
-                case Invalid(errorList) => Ok(errorList.foldMap(_.toString))
-              }
-            }}
-          }}
-
-        }
-        case request@(Method.POST -> Root / "untar") => {
           blocker.use {b => {
             request.decode[Multipart[IO]] { m => {
               PushCodebaseValidator.validateRequest(m) match {
                 case Valid(a) => {
                   val untarCodebase: IO[Unit] = a.codebase
                     .through(archive.untar(512))
-                    .debug()
                     .flatMap({
                       case (filePath, s) => {
                         val file = Paths.get(s"codebases/${a.app}/${a.revision}/${a.config}/${a.target}/$filePath")
@@ -125,7 +103,11 @@ object Main extends IOApp {
                     .compile
                     .drain
 
-                  Ok(untarCodebase)
+                  Ok(for {
+                    _ <- untarCodebase
+                    _ <- CodebaseWorkspace.initConfigFiles(Paths.get(s"codebases/${a.app}/${a.revision}/${a.config}/${a.target}"), b, CodebaseConfig()).compile.drain
+                    _ <- IO.pure(s"npm install --prefix ./codebases/${a.app}/${a.revision}/${a.config}/${a.target}".!!)
+                  } yield ())
                 }
                 case Invalid(errorList) => Ok(errorList.foldMap(_.toString))
               }
