@@ -8,6 +8,9 @@ object CodebaseWorkspace {
   def createPackageJsonFile(path: Path, blocker: Blocker, config: CodebaseConfig)(implicit ctx: ContextShift[IO]) =
     fs2.Stream.emit("""
       |{
+      |  "scripts": {
+      |     "rollup": "./node_modules/rollup/dist/bin/rollup --config ./rollup.config.js"
+      |  },
       |  "devDependencies": {
       |    "rollup": "2.2.0",
       |    "rollup-plugin-typescript2": "0.26.0",
@@ -25,18 +28,12 @@ object CodebaseWorkspace {
                       |
                       |export default {
                       |    input: `src/index.ts`,
-                      |    output: [
-                      |      { file: "lib/index.js", name: "pledge-ts", format: 'es', sourcemap: true }
-                      |    ],
                       |    // Indicate here external modules you don't wanna include in your bundle (i.e.: 'lodash')
                       |    external: [],
-                      |    watch: {
-                      |      include: 'src/**',
-                      |    },
                       |    plugins: [
                       |      // Compile TypeScript files
                       |      typescript({ useTsconfigDeclarationDir: true })
-                      |    ],
+                      |    ]
                       |  }
                       |""".stripMargin)
       .through(fs2.text.utf8Encode)

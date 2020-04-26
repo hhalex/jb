@@ -82,6 +82,22 @@ object Main extends IOApp {
     val app = HttpRoutes
       .of[IO] {
 
+        case request@(Method.POST -> Root / "bundle") => {
+          blocker.use {b => {
+            request.decode[Multipart[IO]] { m => {
+              PushCodebaseValidator.validateRequest(m) match {
+                case Valid(a) => {
+
+                  val root = s"./codebases/${a.app}/${a.revision}/${a.config}/${a.target}"
+                  Ok(for {
+                    res <- IO(s"npm run rollup --prefix $root".!!)
+                  } yield res)
+                }
+                case Invalid(errorList) => Ok(errorList.foldMap(_.toString))
+              }
+            }}
+          }}
+        }
         case request@(Method.POST -> Root / "codebase") => {
           blocker.use {b => {
             request.decode[Multipart[IO]] { m => {
