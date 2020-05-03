@@ -28,6 +28,10 @@ object Main extends IOApp {
             case Valid((w, inputs)) => {
               Ok(for {
                 b <- Stream.resource(blocker)
+                - <- Stream.emits(inputs).evalMap(input => {
+                  val p = w.path.resolve(input)
+                  io.file.exists[IO](b, p)
+                }).fold(true)(_ && _)
                 res <- Stream.eval(IO(s"npm run --silent rollup --prefix ${w.path.toString}".!!))
               } yield res)
             }
@@ -45,7 +49,7 @@ object Main extends IOApp {
                       case (filePath, s) => {
                         val file = workspace.path.resolve(filePath)
                         for {
-                          _ <- Stream.eval(io.file.createDirectories[IO](b, workspace.path))
+                          _ <- Stream.eval(io.file.createDirectories[IO](b, file.getParent))
                           _ <- s.through(io.file.writeAll(file, b)).handleError(e => println(e.getStackTrace.mkString("\n")))
                         } yield ()
                       }
