@@ -22,14 +22,7 @@ object Main extends IOApp {
 
     val app = HttpRoutes
       .of[IO] {
-
-        case request@(Method.GET -> Root / "q" :? WorkspaceMatcher(w)) => {
-          w match {
-            case Valid(config) => Ok(config.toString)
-            case Invalid(e) => BadRequest(e.mkString("\n"))
-          }
-        }
-
+            
         case request@(Method.POST -> Root / "bundle" :? WorkspaceMatcher(vw)) => {
             vw match {
               case Valid(w) => {
