@@ -39,6 +39,6 @@ object WorkspaceMatcher {
       }
     val target = e("target") andThen { t => JavascriptVersion.validate(t).toValidatedNel }
 
-    (versionedApp, versionedLanguage, versionedBundler, target).mapN { WorkspaceConfig2 }
+    (versionedApp, versionedLanguage, versionedBundler, target).mapN { Workspace }
   }
 }
