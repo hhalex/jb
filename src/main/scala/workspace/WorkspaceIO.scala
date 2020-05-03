@@ -1,11 +1,11 @@
-package codebase
+package workspace
 
 import java.nio.file.Path
 
 import cats.effect.{Blocker, ContextShift, IO}
 
-object CodebaseWorkspace {
-  def createPackageJsonFile(path: Path, blocker: Blocker, config: CodebaseConfig)(implicit ctx: ContextShift[IO]) =
+object WorkspaceIO {
+  def createPackageJsonFile(path: Path, blocker: Blocker, config: WorkspaceConfig)(implicit ctx: ContextShift[IO]) =
     fs2.Stream.emit("""
       |{
       |  "scripts": {
@@ -22,7 +22,7 @@ object CodebaseWorkspace {
       .through(fs2.text.utf8Encode)
       .through(fs2.io.file.writeAll[IO](path.resolve("package.json"), blocker))
 
-  def createRollupConfigFile(path: Path, blocker: Blocker, config: CodebaseConfig)(implicit ctx: ContextShift[IO]) =
+  def createRollupConfigFile(path: Path, blocker: Blocker, config: WorkspaceConfig)(implicit ctx: ContextShift[IO]) =
     fs2.Stream.emit("""
                       |import typescript from 'rollup-plugin-typescript2';
                       |
@@ -39,7 +39,7 @@ object CodebaseWorkspace {
       .through(fs2.text.utf8Encode)
       .through(fs2.io.file.writeAll[IO](path.resolve("rollup.config.js"), blocker))
 
-  def createTsConfigFile(path: Path, blocker: Blocker, config: CodebaseConfig)(implicit ctx: ContextShift[IO]) =
+  def createTsConfigFile(path: Path, blocker: Blocker, config: WorkspaceConfig)(implicit ctx: ContextShift[IO]) =
     fs2.Stream.emit("""
                       |{
                       |    "compilerOptions": {
@@ -65,7 +65,7 @@ object CodebaseWorkspace {
       .through(fs2.io.file.writeAll[IO](path.resolve("tsconfig.json"), blocker))
 
 
-  def initConfigFiles(path: Path, blocker: Blocker, config: CodebaseConfig)(implicit ctx: ContextShift[IO]) =
+  def initConfigFiles(path: Path, blocker: Blocker, config: WorkspaceConfig)(implicit ctx: ContextShift[IO]) =
     createPackageJsonFile(path, blocker, config) ++
     createRollupConfigFile(path, blocker, config) ++
       createTsConfigFile(path, blocker, config)

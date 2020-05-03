@@ -8,13 +8,14 @@ import org.http4s.dsl.io._
 import org.http4s.implicits._
 import org.http4s.multipart.Multipart
 import org.http4s.server.blaze.BlazeServerBuilder
-import fs2.{io, _}
+import fs2._
 
 import sys.process._
 import cats.data._
 import cats.data.Validated._
 import cats.implicits._
-import codebase.{CodebaseConfig, CodebaseWorkspace}
+import workspace.config.{Bundler, JavascriptVersion, Language, VersionedBundler, VersionedLanguage}
+import workspace.{WorkspaceConfig, WorkspaceConfig2, WorkspaceIO, WorkspaceMatcher}
 
 trait Read[A] {
   def read(s: String): Option[A]
@@ -79,18 +80,25 @@ object Main extends IOApp {
 
     val blocker = Blocker[IO]
 
+
     val app = HttpRoutes
       .of[IO] {
+
+        case request@(Method.GET -> Root / "q" :? WorkspaceMatcher(w)) => {
+          w match {
+            case Valid(config) => Ok(config.toString)
+            case Invalid(e) => Ok(e.mkString("\n"))
+          }
+        }
 
         case request@(Method.POST -> Root / "bundle") => {
           blocker.use {b => {
             request.decode[Multipart[IO]] { m => {
               PushCodebaseValidator.validateRequest(m) match {
                 case Valid(a) => {
-
                   val root = s"./codebases/${a.app}/${a.revision}/${a.config}/${a.target}"
                   Ok(for {
-                    res <- IO(s"npm run rollup --prefix $root".!!)
+                    res <- IO(s"npm run --silent rollup --prefix $root".!!)
                   } yield res)
                 }
                 case Invalid(errorList) => Ok(errorList.foldMap(_.toString))
@@ -98,7 +106,7 @@ object Main extends IOApp {
             }}
           }}
         }
-        case request@(Method.POST -> Root / "codebase") => {
+        case request@(Method.POST -> Root / "workspace") => {
           blocker.use {b => {
             request.decode[Multipart[IO]] { m => {
               PushCodebaseValidator.validateRequest(m) match {
@@ -121,7 +129,7 @@ object Main extends IOApp {
 
                   Ok(for {
                     _ <- untarCodebase
-                    _ <- CodebaseWorkspace.initConfigFiles(Paths.get(s"codebases/${a.app}/${a.revision}/${a.config}/${a.target}"), b, CodebaseConfig()).compile.drain
+                    _ <- WorkspaceIO.initConfigFiles(Paths.get(s"codebases/${a.app}/${a.revision}/${a.config}/${a.target}"), b, WorkspaceConfig()).compile.drain
                     _ <- IO.pure(s"npm install --prefix ./codebases/${a.app}/${a.revision}/${a.config}/${a.target}".!!)
                   } yield ())
                 }
