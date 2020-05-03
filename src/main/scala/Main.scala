@@ -26,28 +26,35 @@ object Main extends IOApp {
         case (Method.GET -> Root / "bundle" :? WorkspaceMatcher(vw) +& InputFilesMatcher(validatedInputs)) => {
           (vw, validatedInputs.toValidatedNel).tupled match {
             case Valid((w, inputs)) => {
-              Ok(for {
-                b <- Stream.resource(blocker)
-                - <- Stream.emits(inputs).evalMap(input => {
-                  val p = w.path.resolve(input)
-                  io.file.exists[IO](b, p)
-                }).fold(true)(_ && _)
-                res <- Stream.eval(IO(s"npm run --silent rollup --prefix ${w.path.toString}".!!))
-              } yield res)
+              blocker.use { b => {
+                Ok(for {
+                  presentFiles <- inputs.map(input => {
+                    val p = w.rootPath.resolve(input)
+                    io.file.exists[IO](b, p).map(b => {
+                      if (b) input.valid
+                      else input.invalid
+                    })
+                  }).toList.sequence
+                  unknownFiles = presentFiles.collect { case Invalid(inputFile) => inputFile }
+                  res <- unknownFiles match {
+                    case Nil => IO(s"npm run --silent rollup --prefix ${w.rootPath.toString}".!!)
+                    case _ => IO.pure(s"File(s) " + unknownFiles.map(f => s"'$f'").mkString(", ") + " not found.")
+                  }
+                } yield res)
+              }}
             }
             case Invalid(nel) => BadRequest(nel.mkString("\n"))
           }
         }
         case request@(Method.POST -> Root / "workspace" :? WorkspaceMatcher(vw)) => {
-          blocker.use {b => {
             request.decode[Multipart[IO]] { m => {
               (vw, Codebase.extract(m).toValidatedNel).tupled match {
                 case Valid((workspace, codebaseFile)) => {
-                  val untarCodebase: IO[Unit] = codebaseFile
+                  def untarCodebase(b: Blocker) = codebaseFile
                     .through(archive.untar(512))
                     .flatMap({
                       case (filePath, s) => {
-                        val file = workspace.path.resolve(filePath)
+                        val file = workspace.rootPath.resolve(filePath)
                         for {
                           _ <- Stream.eval(io.file.createDirectories[IO](b, file.getParent))
                           _ <- s.through(io.file.writeAll(file, b)).handleError(e => println(e.getStackTrace.mkString("\n")))
@@ -58,15 +65,15 @@ object Main extends IOApp {
                     .drain
 
                   Ok(for {
-                    _ <- untarCodebase
-                    _ <- WorkspaceIO.initConfigFiles(workspace, b).compile.drain
-                    _ <- IO(s"npm install --prefix ${workspace.path.toString}".!!)
+                    b <- Stream.resource(blocker)
+                    _ <- Stream.eval(untarCodebase(b))
+                    _ <- Stream.eval(WorkspaceIO.initConfigFiles(workspace, b).compile.drain)
+                    _ <- Stream.eval(IO(s"npm install --prefix ${workspace.rootPath.toString}".!!))
                   } yield ())
                 }
-                case Invalid(errorList) => Ok(errorList.foldMap(_.toString))
+                case Invalid(errorList) => BadRequest(errorList.foldMap(_.toString))
               }
             }}
-          }}
         }
       }
       .orNotFound

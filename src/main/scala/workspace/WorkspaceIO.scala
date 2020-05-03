@@ -18,7 +18,7 @@ object WorkspaceIO {
       |}
       |""".stripMargin)
       .through(fs2.text.utf8Encode)
-      .through(fs2.io.file.writeAll[IO](workspace.path.resolve("package.json"), blocker))
+      .through(fs2.io.file.writeAll[IO](workspace.rootPath.resolve("package.json"), blocker))
 
   def createRollupConfigFile(workspace: Workspace, blocker: Blocker)(implicit ctx: ContextShift[IO]) =
     fs2.Stream.emit("""
@@ -35,7 +35,7 @@ object WorkspaceIO {
                       |  }
                       |""".stripMargin)
       .through(fs2.text.utf8Encode)
-      .through(fs2.io.file.writeAll[IO](workspace.path.resolve("rollup.config.js"), blocker))
+      .through(fs2.io.file.writeAll[IO](workspace.rootPath.resolve("rollup.config.js"), blocker))
 
   def createTsConfigFile(workspace: Workspace, blocker: Blocker)(implicit ctx: ContextShift[IO]) =
     fs2.Stream.emit("""
@@ -60,7 +60,7 @@ object WorkspaceIO {
                       |    ]
                       |}""".stripMargin)
       .through(fs2.text.utf8Encode)
-      .through(fs2.io.file.writeAll[IO](workspace.path.resolve("tsconfig.json"), blocker))
+      .through(fs2.io.file.writeAll[IO](workspace.rootPath.resolve("tsconfig.json"), blocker))
 
 
   def initConfigFiles(workspace: Workspace, blocker: Blocker)(implicit ctx: ContextShift[IO]) =
