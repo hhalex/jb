@@ -27,16 +27,13 @@ object Main extends IOApp {
           (vw, validatedInputs.toValidatedNel).tupled match {
             case Valid((w, inputs)) => {
               blocker.use { b => {
-                Ok(for {
-                  checkedFiles <- WorkspaceIO.checkInputFilesExist(w, b, inputs).handleError(e => Left(List(e.getMessage)))
-                  res <- checkedFiles match {
-                    case Right(files) => WorkspaceIO.bundleWithRollup(w, files)
-                    case Left(missingFiles) => IO.pure(s"File(s) " + missingFiles.map(f => s"'$f'").mkString(", ") + " not found.")
-                  }
-                } yield res)
+                WorkspaceIO.checkInputFilesExist(w, b, inputs).flatMap {
+                  case Right(files) => Ok(WorkspaceIO.bundleWithRollup(w, files))
+                  case Left(missingFiles) => BadRequest(IO.pure(s"File(s) " + missingFiles.map(f => s"'$f'").mkString(", ") + " not found."))
+                }
               }}
             }
-            case Invalid(nel) => BadRequest(nel.mkString("\n"))
+            case Invalid(errors) => BadRequest(errors.mkString("\n"))
           }
         }
         case request@Method.POST -> Root / "workspace" :? WorkspaceMatcher(vw) => {
