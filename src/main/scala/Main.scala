@@ -13,7 +13,7 @@ import fs2._
 import sys.process._
 import cats.data.Validated._
 import cats.implicits._
-import workspace.{Codebase, InputFilesMatcher, Workspace, WorkspaceIO, WorkspaceMatcher}
+import workspace.{Codebase, InputFilesMatcher, WorkspaceIO, WorkspaceMatcher}
 
 object Main extends IOApp {
   def run(args: List[String]) = {
@@ -29,7 +29,7 @@ object Main extends IOApp {
               blocker.use { b => {
                 Ok(for {
                   presentFiles <- inputs.map(input => {
-                    val p = w.rootPath.resolve(input)
+                    val p = w.codebasePath.resolve(input)
                     io.file.exists[IO](b, p).map(b => {
                       if (b) input.valid
                       else input.invalid
@@ -37,7 +37,13 @@ object Main extends IOApp {
                   }).toList.sequence
                   unknownFiles = presentFiles.collect { case Invalid(inputFile) => inputFile }
                   res <- unknownFiles match {
-                    case Nil => IO(s"npm run --silent rollup --prefix ${w.rootPath.toString}".!!)
+                    case Nil => {
+                      val path = w.rootPath.relativize(w.codebasePath)
+                      val imports = presentFiles.collect { case Valid(input) => s"""import './$path/$input';""" }.mkString
+                      val wholeCommand =
+                        (s"""echo "$imports"""" #| s"npm run rollup --silent --prefix ${w.rootPath.toString}")
+                      IO(wholeCommand.!!)
+                    }
                     case _ => IO.pure(s"File(s) " + unknownFiles.map(f => s"'$f'").mkString(", ") + " not found.")
                   }
                 } yield res)
@@ -54,7 +60,7 @@ object Main extends IOApp {
                     .through(archive.untar(512))
                     .flatMap({
                       case (filePath, s) => {
-                        val file = workspace.rootPath.resolve(filePath)
+                        val file = workspace.codebasePath.resolve(filePath)
                         for {
                           _ <- Stream.eval(io.file.createDirectories[IO](b, file.getParent))
                           _ <- s.through(io.file.writeAll(file, b)).handleError(e => println(e.getStackTrace.mkString("\n")))

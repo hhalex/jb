@@ -7,7 +7,7 @@ object WorkspaceIO {
     fs2.Stream.emit("""
       |{
       |  "scripts": {
-      |     "rollup": "./node_modules/rollup/dist/bin/rollup --config ./rollup.config.js"
+      |     "rollup": "./node_modules/rollup/dist/bin/rollup --config ./rollup.config.js --format iife"
       |  },
       |  "devDependencies": {
       |    "rollup": "2.2.0",
@@ -25,9 +25,7 @@ object WorkspaceIO {
                       |import typescript from 'rollup-plugin-typescript2';
                       |
                       |export default {
-                      |    input: `src/index.ts`,
-                      |    // Indicate here external modules you don't wanna include in your bundle (i.e.: 'lodash')
-                      |    external: [],
+                      |    input: "-",
                       |    plugins: [
                       |      // Compile TypeScript files
                       |      typescript({ useTsconfigDeclarationDir: true })
@@ -52,8 +50,8 @@ object WorkspaceIO {
                       |        "target": "ES6"
                       |    },
                       |    "include": [
-                      |        "src/**/*"
-                      |    ],
+                      |        "codebase/**/*"
+                      |        ],
                       |    "exclude": [
                       |        "node_modules",
                       |        "**/*.spec.ts"
