@@ -1,8 +1,34 @@
 package workspace
 
+import cats.data.Validated.{Invalid, Valid}
+import cats.implicits._
 import cats.effect.{Blocker, ContextShift, IO}
+import fs2.io
 
 object WorkspaceIO {
+  def bundleWithRollup(workspace: Workspace, files: scala.collection.Seq[String]) = {
+    import scala.sys.process._
+
+    val path = workspace.rootPath.relativize(workspace.codebasePath)
+    val imports = files.map { input => s"""import './$path/$input';""" }.mkString
+    val wholeCommand = s"""echo "$imports"""" #| s"npm run rollup --silent --prefix ${workspace.rootPath.toString}"
+    IO(wholeCommand.!!)
+  }
+
+  def checkInputFilesExist(workspace: Workspace, blocker: Blocker, inputs: scala.collection.Seq[String])(implicit ctx: ContextShift[IO]) =
+    inputs.map(input => {
+      val p = workspace.codebasePath.resolve(input)
+      io.file.exists[IO](blocker, p).map(b => {
+        if (b) input.valid
+        else input.invalid
+      })
+    }).toList.sequence.map(all => {
+      all.collect({ case Invalid(i) => i }) match {
+        case Nil => Right(all.collect({ case Valid(i) => i }))
+        case l => Left(l)
+      }
+    })
+
   def createPackageJsonFile(workspace: Workspace, blocker: Blocker)(implicit ctx: ContextShift[IO]) =
     fs2.Stream.emit("""
       |{

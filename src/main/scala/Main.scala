@@ -23,28 +23,15 @@ object Main extends IOApp {
     val app = HttpRoutes
       .of[IO] {
 
-        case (Method.GET -> Root / "bundle" :? WorkspaceMatcher(vw) +& InputFilesMatcher(validatedInputs)) => {
+        case Method.GET -> Root / "bundle" :? WorkspaceMatcher(vw) +& InputFilesMatcher(validatedInputs) => {
           (vw, validatedInputs.toValidatedNel).tupled match {
             case Valid((w, inputs)) => {
               blocker.use { b => {
                 Ok(for {
-                  presentFiles <- inputs.map(input => {
-                    val p = w.codebasePath.resolve(input)
-                    io.file.exists[IO](b, p).map(b => {
-                      if (b) input.valid
-                      else input.invalid
-                    })
-                  }).toList.sequence
-                  unknownFiles = presentFiles.collect { case Invalid(inputFile) => inputFile }
-                  res <- unknownFiles match {
-                    case Nil => {
-                      val path = w.rootPath.relativize(w.codebasePath)
-                      val imports = presentFiles.collect { case Valid(input) => s"""import './$path/$input';""" }.mkString
-                      val wholeCommand =
-                        (s"""echo "$imports"""" #| s"npm run rollup --silent --prefix ${w.rootPath.toString}")
-                      IO(wholeCommand.!!)
-                    }
-                    case _ => IO.pure(s"File(s) " + unknownFiles.map(f => s"'$f'").mkString(", ") + " not found.")
+                  checkedFiles <- WorkspaceIO.checkInputFilesExist(w, b, inputs).handleError(e => Left(List(e.getMessage)))
+                  res <- checkedFiles match {
+                    case Right(files) => WorkspaceIO.bundleWithRollup(w, files)
+                    case Left(missingFiles) => IO.pure(s"File(s) " + missingFiles.map(f => s"'$f'").mkString(", ") + " not found.")
                   }
                 } yield res)
               }}
@@ -52,7 +39,7 @@ object Main extends IOApp {
             case Invalid(nel) => BadRequest(nel.mkString("\n"))
           }
         }
-        case request@(Method.POST -> Root / "workspace" :? WorkspaceMatcher(vw)) => {
+        case request@Method.POST -> Root / "workspace" :? WorkspaceMatcher(vw) => {
             request.decode[Multipart[IO]] { m => {
               (vw, Codebase.extract(m).toValidatedNel).tupled match {
                 case Valid((workspace, codebaseFile)) => {
