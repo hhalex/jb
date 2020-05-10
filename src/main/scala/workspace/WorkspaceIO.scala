@@ -4,6 +4,8 @@ import cats.data.Validated.{Invalid, Valid}
 import cats.implicits._
 import cats.effect.{Blocker, ContextShift, IO}
 import fs2.io
+import _root_.io.circe.Json
+import workspace.config.{Bundler, Language, VersionedBundler, VersionedLanguage}
 
 object WorkspaceIO {
   def bundleWithRollup(workspace: Workspace, files: scala.collection.Seq[String]) = {
@@ -11,7 +13,7 @@ object WorkspaceIO {
 
     val path = workspace.rootPath.relativize(workspace.codebasePath)
     val imports = files.map { input => s"""import './$path/$input';""" }.mkString
-    val wholeCommand = s"""echo "$imports"""" #| s"npm run rollup --silent --prefix ${workspace.rootPath.toString}"
+    val wholeCommand = s"""echo "$imports"""" #| s"npm run build --silent --prefix ${workspace.rootPath.toString}"
     IO(wholeCommand.!!)
   }
 
@@ -29,22 +31,32 @@ object WorkspaceIO {
       }
     })
 
-  def createPackageJsonFile(workspace: Workspace, blocker: Blocker)(implicit ctx: ContextShift[IO]) =
-    fs2.Stream.emit("""
-      |{
-      |  "scripts": {
-      |     "rollup": "./node_modules/rollup/dist/bin/rollup --config ./rollup.config.js --format iife"
-      |  },
-      |  "devDependencies": {
-      |    "rollup": "2.2.0",
-      |    "rollup-plugin-typescript2": "0.26.0",
-      |    "typescript": "3.8.3",
-      |    "ts-node": "8.8.1"
-      |  }
-      |}
-      |""".stripMargin)
+  def createPackageJsonFile(workspace: Workspace, blocker: Blocker)(implicit ctx: ContextShift[IO]) = {
+    import _root_.io.circe.syntax._
+
+    val (scripts, devDependencies) = workspace match {
+      case w if (workspace.b.b == Bundler.Rollup && w.l.l == Language.Typescript) => {
+        (
+          Json.obj(
+            "build" -> "./node_modules/rollup/dist/bin/rollup --config ./rollup.config.js --format iife".asJson
+          ),
+          Json.obj(
+            "rollup" -> w.b.version.asJson,
+            "rollup-plugin-typescript2" -> "0.26.0".asJson,
+            "typescript" -> w.l.version.asJson
+          )
+        )
+      }
+      case _ => (Json.Null, Json.Null)
+    }
+
+    fs2.Stream.emit(Json.obj(
+      "scripts" -> scripts,
+      "devDependencies" -> devDependencies
+    ).spaces2)
       .through(fs2.text.utf8Encode)
       .through(fs2.io.file.writeAll[IO](workspace.rootPath.resolve("package.json"), blocker))
+  }
 
   def createRollupConfigFile(workspace: Workspace, blocker: Blocker)(implicit ctx: ContextShift[IO]) =
     fs2.Stream.emit("""
