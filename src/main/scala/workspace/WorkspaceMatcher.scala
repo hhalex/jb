@@ -5,7 +5,7 @@ import workspace.config.{Bundler, JavascriptVersion, Language, VersionedApplicat
 import cats.implicits._
 
 object WorkspaceMatcher {
-  def extractString(params: Map[String, collection.Seq[String]], fieldName: String) = {
+  private def extractString(params: Map[String, collection.Seq[String]], fieldName: String) = {
     params.get(fieldName) match {
       case Some(values) => values match {
         case h :: Nil => Valid(h)
@@ -34,7 +34,7 @@ object WorkspaceMatcher {
         case (language, languageRev) =>
           Language(language).toValidatedNel
             .andThen {
-              (l: Language) => VersionedLanguage.validate(l, languageRev).toValidatedNel
+              (l: Language) => VersionedLanguage.validateInput(l, languageRev).toValidatedNel
             }
       }
     val target = e("target") andThen { t => JavascriptVersion.validate(t).toValidatedNel }

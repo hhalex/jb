@@ -2,9 +2,9 @@ package workspace
 
 import java.nio.file.Paths
 
-import workspace.config.{VersionedApplication, VersionedBundler, VersionedLanguage}
+import workspace.config.{JavascriptVersion, VersionedApplication, VersionedBundler, VersionedLanguage}
 
-case class Workspace(a: VersionedApplication, l: VersionedLanguage, b: VersionedBundler, t: String) {
-  val rootPath = Paths.get(s"./workspaces/${a.name}/${a.rev}/${b.b.toString}-${b.version}-${l.l.toString}-${l.version}-$t")
+case class Workspace(vApp: VersionedApplication, vLanguage: VersionedLanguage, vBundler: VersionedBundler, target: JavascriptVersion) {
+  val rootPath = Paths.get(s"./workspaces/${vApp.name}/${vApp.rev}/${vBundler.toString}-${vLanguage.toString}-$target")
   val codebasePath = rootPath.resolve("codebase")
 }

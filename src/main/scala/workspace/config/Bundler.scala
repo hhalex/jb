@@ -13,10 +13,14 @@ object Bundler {
   }
 }
 
-case class VersionedBundler(b: Bundler, version: String)
+sealed trait VersionedBundler
 
 object VersionedBundler {
-  def validate(b: Bundler, v: String) = b match {
-    case Bundler.Rollup => NpmVersion.validate(v).map(validVersion => VersionedBundler(b, validVersion))
+  case class Rollup(version: String) extends VersionedBundler {
+    override def toString: String = s"rollup-$version"
+  }
+
+  def validate(b: Bundler, v: String): Validated[String, VersionedBundler] = b match {
+    case Bundler.Rollup => NpmVersion.validate(v).map(Rollup)
   }
 }

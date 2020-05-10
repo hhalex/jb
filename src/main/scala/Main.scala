@@ -1,7 +1,5 @@
 package com.hhalex.jb
 
-import java.nio.file.Paths
-
 import cats.effect.{Blocker, ExitCode, IO, IOApp}
 import org.http4s._
 import org.http4s.dsl.io._
@@ -27,9 +25,9 @@ object Main extends IOApp {
           (vw, validatedInputs.toValidatedNel).tupled match {
             case Valid((w, inputs)) => {
               blocker.use { b => {
-                WorkspaceIO.checkInputFilesExist(w, b, inputs).flatMap {
-                  case Right(files) => Ok(WorkspaceIO.bundleWithRollup(w, files))
-                  case Left(missingFiles) => BadRequest(IO.pure(s"File(s) " + missingFiles.map(f => s"'$f'").mkString(", ") + " not found."))
+                WorkspaceIO.checkInputFilesExist(w, b, inputs.toList).flatMap {
+                  case Valid(files) => Ok(WorkspaceIO.bundleWithRollup(w, files))
+                  case Invalid(missingFiles) => BadRequest(IO.pure(s"File(s) " + missingFiles.map(f => s"'$f'").mkString(", ") + " not found."))
                 }
               }}
             }

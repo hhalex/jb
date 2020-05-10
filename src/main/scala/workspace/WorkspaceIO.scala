@@ -1,54 +1,50 @@
 package workspace
 
-import cats.data.Validated.{Invalid, Valid}
 import cats.implicits._
 import cats.effect.{Blocker, ContextShift, IO}
 import fs2.io
 import _root_.io.circe.Json
-import workspace.config.{Bundler, Language, VersionedBundler, VersionedLanguage}
+import workspace.config.{VersionedBundler, VersionedLanguage}
 
 object WorkspaceIO {
-  def bundleWithRollup(workspace: Workspace, files: scala.collection.Seq[String]) = {
+  def bundleWithRollup(workspace: Workspace, files: List[String]) = {
     import scala.sys.process._
 
-    val path = workspace.rootPath.relativize(workspace.codebasePath)
-    val imports = files.map { input => s"""import './$path/$input';""" }.mkString
+    val imports = files.map { input => {
+      val inputPath = workspace.rootPath.relativize(workspace.codebasePath.resolve(input))
+      s"""import './$inputPath';"""
+    } }.mkString
     val wholeCommand = s"""echo "$imports"""" #| s"npm run build --silent --prefix ${workspace.rootPath.toString}"
     IO(wholeCommand.!!)
   }
 
-  def checkInputFilesExist(workspace: Workspace, blocker: Blocker, inputs: scala.collection.Seq[String])(implicit ctx: ContextShift[IO]) =
+  def checkInputFilesExist(workspace: Workspace, blocker: Blocker, inputs: List[String])(implicit ctx: ContextShift[IO]) =
     inputs.map(input => {
-      val p = workspace.codebasePath.resolve(input)
-      io.file.exists[IO](blocker, p).map(b => {
-        if (b) input.valid
+      val inputPath = workspace.codebasePath.resolve(input)
+      io.file.exists[IO](blocker, inputPath).map(b => {
+        if (b) List(input).valid
         else input.invalid
-      })
-    }).toList.sequence.map(all => {
-      all.collect({ case Invalid(i) => i }) match {
-        case Nil => Right(all.collect({ case Valid(i) => i }))
-        case l => Left(l)
-      }
-    })
+      }.toValidatedNel)
+    }).sequence.map(_.combineAll)
 
   def createPackageJsonFile(workspace: Workspace, blocker: Blocker)(implicit ctx: ContextShift[IO]) = {
     import _root_.io.circe.syntax._
 
-    val (scripts, devDependencies) = workspace match {
-      case w if (workspace.b.b == Bundler.Rollup && w.l.l == Language.Typescript) => {
+    val (scripts, devDependencies) = workspace.vBundler match {
+      case VersionedBundler.Rollup(version) => {
+        val additionalDevDependencies = workspace.vLanguage match {
+          case VersionedLanguage.Typescript(version) =>
+            List("typescript" -> version.asJson, "rollup-plugin-typescript2" -> "0.26.0".asJson)
+          case _ => Nil
+        }
         (
-          Json.obj(
-            "build" -> "./node_modules/rollup/dist/bin/rollup --config ./rollup.config.js --format iife".asJson
-          ),
-          Json.obj(
-            "rollup" -> w.b.version.asJson,
-            "rollup-plugin-typescript2" -> "0.26.0".asJson,
-            "typescript" -> w.l.version.asJson
-          )
+          Json.obj("build" -> "./node_modules/rollup/dist/bin/rollup --config ./rollup.config.js --format iife".asJson),
+          Json.obj("rollup" -> version.asJson :: additionalDevDependencies: _*)
         )
       }
-      case _ => (Json.Null, Json.Null)
+      case _ => (Json.obj(), Json.obj())
     }
+
 
     fs2.Stream.emit(Json.obj(
       "scripts" -> scripts,
